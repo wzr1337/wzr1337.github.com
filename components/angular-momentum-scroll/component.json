@@ -4,7 +4,7 @@
   },
   "name": "angular-momentum-scroll",
   "description": "Momentum scroll for AngularJS based on iScroll.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "main": "scrollable.min.js",
   "scripts": [
     "scrollable.min.js"
@@ -17,8 +17,8 @@
   "dependencies": {
     "angular": "1.0.6"
   },
-  "gitHead": "e2cb9549c77723605605b295059aed63199e9c04",
-  "readme": "# angular-momentum-scroll\n\nAngularJS directive that adds momentum scroll via iScroll (http://cubiq.org/iscroll-4).\n\n## Usage\n\n* Include `scrollable.js` or `scrollable.min.js` into your page\n* Declare `'angular-momentum-scroll'` as a dependency for your angular app: `angular.module('myApp', ['angular-momentum-scroll']);`\n* Add the `scrollable` attribute to a container of your choice:\n    * the container MUST have set width and height !!\n    * in order to scroll horizontally the .scroller class inside of your container MUST have set width and height !!\n* The container takes an additional attribute `parameters` according to iScroll docs. e.g. <div id=\"my-cont\" style=\"height: 400px; width: 100%;\" scrollable parameters=\"{{ {hScrollbar : true, snap: '.row'} }}\">\n",
+  "gitHead": "d6b0b1da2b5bfa5b02ded68a2e9c3def97ecfb54",
+  "readme": "# angular-momentum-scroll\n\nAngularJS directive that adds momentum scroll via iScroll (http://cubiq.org/iscroll-4).\n\n## Usage\n\n* Include `scrollable.js` or `scrollable.min.js` into your page\n* Declare `'angular-momentum-scroll'` as a dependency for your angular app: `angular.module('myApp', ['angular-momentum-scroll']);`\n* Add the `scrollable` attribute to a container of your choice:\n    * the container MUST have set width and height !!\n    * in order to scroll horizontally the .scroller class inside of your container MUST have set width and height !!\n* The container takes an additional attribute `parameters` according to iScroll docs. e.g. \n   `<div id=\"my-cont\" style=\"height: 400px; width: 100%;\" scrollable parameters=\"{{ {hScrollbar : true, snap: '.row'} }}\">`\n* You can ergister any of the following handlers by specifying a callback function via attribute:\n    * onRefresh\n    * onBeforeScrollStart\n    * onScrollStart\n    * onBeforeScrollMove\n    * onScrollMove\n    * onBeforeScrollEnd\n    * onScrollEnd\n    * onTouchEnd\n    * onDestroy\n    * onZoomStart\n    * onZoom\n    * onZoomEnd\n    `<div id=\"my-cont\" style=\"height: 400px; width: 100%;\" scrollable parameters=\"{{ {hScrollbar : true, snap: '.row'} }}\" on-scroll-move=\"doSometginhg()\">...</div>`\n",
   "readmeFilename": "README.md",
-  "_id": "angular-momentum-scroll@0.2.0"
+  "_id": "angular-momentum-scroll@0.3.0"
 }
