@@ -4,10 +4,10 @@
   },
   "name": "angular-momentum-scroll",
   "description": "Momentum scroll for AngularJS based on iScroll.",
-  "version": "0.4.1",
-  "main": "scrollable.min.js",
+  "version": "0.4.2",
+  "main": "dist/scrollable.min.js",
   "scripts": [
-    "scrollable.min.js"
+    "dist/scrollable.min.js"
   ],
   "homepage": "http://github.com/wzr1337/angular-momentum-scroll",
   "repository": {
@@ -19,8 +19,8 @@
     "iscroll": "latest",
     "angular-mocks": "~1.0.6"
   },
-  "gitHead": "76ae765b588130637f61fa68c5c55c7f31d893aa",
+  "gitHead": "8a908eb5d59cb9a27d382ca7cca20854f020283f",
   "readme": "# angular-momentum-scroll\n\nAngularJS directive that adds momentum scroll via iScroll (http://cubiq.org/iscroll-4).\n\n## Demo\nFind a demonstration on http://wzr1337.github.com\n\n## Usage\n\n* Include `scrollable.js` or `scrollable.min.js` into your page\n* Declare `'angular-momentum-scroll'` as a dependency for your angular app: `angular.module('myApp', ['angular-momentum-scroll']);`\n* Add the `scrollable` attribute to a container of your choice:\n    * the container MUST have set width and height !!\n    * in order to scroll horizontally the .scroller class inside of your container MUST have set width and height !!\n* The container takes an additional attribute `parameters` according to iScroll docs. e.g. \n   \n    ```javascript\n    <div id=\"my-cont\" style=\"height: 400px; width: 100%;\" scrollable \n    parameters=\"{{ {vScroll : true, snap: '.row'} }}\">\n\n* You can register any of the following handlers by specifying a callback function via attribute:\n    * onRefresh\n    * onBeforeScrollStart\n    * onScrollStart\n    * onBeforeScrollMove\n    * onScrollMove\n    * onBeforeScrollEnd\n    * onScrollEnd\n    * onTouchEnd\n    * onDestroy\n    * onZoomStart\n    * onZoom\n    * onZoomEnd\n\n    ```javascript\n    <div id=\"my-cont\" style=\"height: 400px; width: 100%;\" scrollable\n    parameters=\"{{ {hScrollbar : true, snap: '.row'} }}\"\n    on-scroll-move=\"doSometginhg()\">...</div>\n\n* You can bind a variable to the curr-page-x and curr-page-y attribute. The data binding is bidirectional, so that you can scroll programatically as well as being notified on page change.\n\n  ```javascript\n    <div id=\"my-cont\" style=\"height: 400px; width: 100%;\" scrollable\n    parameters=\"{{ {vScroll : true, snap: '.row'} }}\"\n    curr-page-y=\"myPageY\">...</div>\n",
   "readmeFilename": "README.md",
-  "_id": "angular-momentum-scroll@0.4.1"
+  "_id": "angular-momentum-scroll@0.4.2"
 }
