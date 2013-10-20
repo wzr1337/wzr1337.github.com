@@ -11,7 +11,6 @@ function IScroll (el, options) {
 		startX: 0,
 		startY: 0,
 		scrollY: true,
-		lockDirection: true,
 		directionLockThreshold: 5,
 		momentum: true,
 
@@ -20,6 +19,7 @@ function IScroll (el, options) {
 		bounceEasing: '',
 
 		preventDefault: true,
+		preventDefaultException: { tagName: /^(INPUT|TEXTAREA|BUTTON|SELECT)$/ },
 
 		HWCompositing: true,
 		useTransition: true,
@@ -44,10 +44,12 @@ function IScroll (el, options) {
 	this.options.scrollX = this.options.eventPassthrough == 'horizontal' ? false : this.options.scrollX;
 
 	// With eventPassthrough we also need lockDirection mechanism
-	this.options.lockDirection = this.options.lockDirection || this.options.eventPassthrough;
+	this.options.freeScroll = this.options.freeScroll && !this.options.eventPassthrough;
 	this.options.directionLockThreshold = this.options.eventPassthrough ? 0 : this.options.directionLockThreshold;
 
 	this.options.bounceEasing = typeof this.options.bounceEasing == 'string' ? utils.ease[this.options.bounceEasing] || utils.ease.circular : this.options.bounceEasing;
+
+	this.options.resizePolling = this.options.resizePolling === undefined ? 60 : this.options.resizePolling;
 
 	if ( this.options.tap === true ) {
 		this.options.tap = 'tap';
@@ -58,6 +60,8 @@ function IScroll (el, options) {
 	// Some defaults	
 	this.x = 0;
 	this.y = 0;
+	this.directionX = 0;
+	this.directionY = 0;
 	this._events = {};
 
 // INSERT POINT: DEFAULTS
@@ -97,12 +101,19 @@ IScroll.prototype = {
 	},
 
 	_start: function (e) {
+		// React to left mouse button only
+		if ( utils.eventType[e.type] != 1 ) {
+			if ( e.button !== 0 ) {
+				return;
+			}
+		}
+
 		if ( !this.enabled || (this.initiated && utils.eventType[e.type] !== this.initiated) ) {
 			return;
 		}
 
-		if ( this.options.preventDefault ) {
-			e.preventDefault();
+		if ( this.options.preventDefault && !utils.isAndroidBrowser && !utils.preventDefaultException(e.target, this.options.preventDefaultException) ) {
+			e.preventDefault();		// This seems to break default Android browser
 		}
 
 		var point = e.touches ? e.touches[0] : e,
@@ -117,7 +128,7 @@ IScroll.prototype = {
 		this.directionLocked = 0;
 
 		this._transitionTime();
-		
+
 		this.isAnimating = false;
 		this.startTime = utils.getTime();
 
@@ -128,12 +139,12 @@ IScroll.prototype = {
 			this.isInTransition = false;
 		}
 
-		this.startX = this.x;
-		this.startY = this.y;
+		this.startX    = this.x;
+		this.startY    = this.y;
 		this.absStartX = this.x;
 		this.absStartY = this.y;
-		this.pointX = point.pageX;
-		this.pointY = point.pageY;
+		this.pointX    = point.pageX;
+		this.pointY    = point.pageY;
 
 		this._execEvent('scrollStart');
 	},
@@ -148,8 +159,8 @@ IScroll.prototype = {
 		}
 
 		var point		= e.touches ? e.touches[0] : e,
-			deltaX		= point.pageX - this.pointX,
-			deltaY		= point.pageY - this.pointY,
+			deltaX		= this.hasHorizontalScroll ? point.pageX - this.pointX : 0,
+			deltaY		= this.hasVerticalScroll   ? point.pageY - this.pointY : 0,
 			timestamp	= utils.getTime(),
 			newX, newY,
 			absDistX, absDistY;
@@ -168,13 +179,13 @@ IScroll.prototype = {
 		}
 
 		// If you are scrolling in one direction lock the other
-		if ( !this.directionLocked && this.options.lockDirection ) {
+		if ( !this.directionLocked && !this.options.freeScroll ) {
 			if ( absDistX > absDistY + this.options.directionLockThreshold ) {
 				this.directionLocked = 'h';		// lock horizontally
 			} else if ( absDistY >= absDistX + this.options.directionLockThreshold ) {
 				this.directionLocked = 'v';		// lock vertically
 			} else {
-				this.directionLocked = 0;		// no lock
+				this.directionLocked = 'n';		// no lock
 			}
 		}
 
@@ -198,8 +209,8 @@ IScroll.prototype = {
 			deltaX = 0;
 		}
 
-		newX = this.x + (this.hasHorizontalScroll ? deltaX : 0);
-		newY = this.y + (this.hasVerticalScroll ? deltaY : 0);
+		newX = this.x + deltaX;
+		newY = this.y + deltaY;
 
 		// Slow down if outside of the boundaries
 		if ( newX > 0 || newX < this.maxScrollX ) {
@@ -233,7 +244,7 @@ IScroll.prototype = {
 			return;
 		}
 
-		if ( this.options.preventDefault ) {
+		if ( this.options.preventDefault && !utils.preventDefaultException(e.target, this.options.preventDefaultException) ) {
 			e.preventDefault();
 		}
 
@@ -243,8 +254,12 @@ IScroll.prototype = {
 			duration = utils.getTime() - this.startTime,
 			newX = Math.round(this.x),
 			newY = Math.round(this.y),
+			distanceX = Math.abs(newX - this.startX),
+			distanceY = Math.abs(newY - this.startY),
 			time = 0,
 			easing = '';
+
+		this.scrollTo(newX, newY);	// ensures that the last position is rounded
 
 		this.isInTransition = 0;
 		this.initiated = 0;
@@ -268,6 +283,11 @@ IScroll.prototype = {
 			return;
 		}
 
+		if ( this._events.flick && duration < 200 && distanceX < 100 && distanceY < 100 ) {
+			this._execEvent('flick');
+			return;
+		}
+
 		// start momentum animation if needed
 		if ( this.options.momentum && duration < 300 ) {
 			momentumX = this.hasHorizontalScroll ? utils.momentum(this.x, this.startX, duration, this.maxScrollX, this.options.bounce ? this.wrapperWidth : 0) : { destination: newX, duration: 0 };
@@ -278,20 +298,7 @@ IScroll.prototype = {
 			this.isInTransition = 1;
 		}
 
-		if ( this.options.snap ) {
-			var snap = this._nearestSnap(newX, newY);
-			this.currentPage = snap;
-			newX = snap.x;
-			newY = snap.y;
-			time = this.options.snapSpeed || Math.max(
-				Math.max(
-					Math.min(Math.abs(newX - this.x), 1000),
-					Math.min(Math.abs(newY - this.y), 1000)
-				),
-			300);
-
-			easing = this.options.bounceEasing;
-		}
+// INSERT POINT: _end
 
 		if ( newX != this.x || newY != this.y ) {
 			// change easing function when scroller goes out of the boundaries
@@ -313,15 +320,10 @@ IScroll.prototype = {
 
 		this.resizeTimeout = setTimeout(function () {
 			that.refresh();
-			that.resetPosition();
-		}, 60);
+		}, this.options.resizePolling);
 	},
 
 	resetPosition: function (time) {
-		if ( this.x <= 0 && this.x >= this.maxScrollX && this.y <= 0 && this.y >= this.maxScrollY ) {
-			return false;
-		}
-
 		var x = this.x,
 			y = this.y;
 
@@ -339,6 +341,10 @@ IScroll.prototype = {
 			y = this.maxScrollY;
 		}
 
+		if ( x == this.x && y == this.y ) {
+			return false;
+		}
+
 		this.scrollTo(x, y, time, this.options.bounceEasing);
 
 		return true;
@@ -353,7 +359,7 @@ IScroll.prototype = {
 	},
 
 	refresh: function () {
-		var rf = this.wrapper.offsetHeight;		// Force refresh
+		var rf = this.wrapper.offsetHeight;		// Force reflow
 
 		this.wrapperWidth	= this.wrapper.clientWidth;
 		this.wrapperHeight	= this.wrapper.clientHeight;
@@ -368,20 +374,31 @@ IScroll.prototype = {
 		this.maxScrollX		= this.wrapperWidth - this.scrollerWidth;
 		this.maxScrollY		= this.wrapperHeight - this.scrollerHeight;
 
-		if ( this.maxScrollX > 0 ) {
-			this.maxScrollX = 0;
-		}
-
-		if ( this.maxScrollY > 0 ) {
-			this.maxScrollY = 0;
-		}
-
 		this.hasHorizontalScroll	= this.options.scrollX && this.maxScrollX < 0;
 		this.hasVerticalScroll		= this.options.scrollY && this.maxScrollY < 0;
 
-		this.endTime		= 0;
+		if ( !this.hasHorizontalScroll ) {
+			this.maxScrollX = 0;
+			this.scrollerWidth = this.wrapperWidth;
+		}
+
+		if ( !this.hasVerticalScroll ) {
+			this.maxScrollY = 0;
+			this.scrollerHeight = this.wrapperHeight;
+		}
+
+		this.endTime = 0;
+		this.directionX = 0;
+		this.directionY = 0;
+
+		this.wrapperOffset = utils.offset(this.wrapper);
 
 		this._execEvent('refresh');
+
+		this.resetPosition();
+
+// INSERT POINT: _refresh
+
 	},
 
 	on: function (type, fn) {
@@ -429,6 +446,37 @@ IScroll.prototype = {
 		}
 	},
 
+	scrollToElement: function (el, time, offsetX, offsetY, easing) {
+		el = el.nodeType ? el : this.scroller.querySelector(el);
+
+		if ( !el ) {
+			return;
+		}
+
+		var pos = utils.offset(el);
+
+		pos.left -= this.wrapperOffset.left;
+		pos.top  -= this.wrapperOffset.top;
+
+		// if offsetX/Y are true we center the element to the screen
+		if ( offsetX === true ) {
+			offsetX = Math.round(el.offsetWidth / 2 - this.wrapper.offsetWidth / 2);
+		}
+		if ( offsetY === true ) {
+			offsetY = Math.round(el.offsetHeight / 2 - this.wrapper.offsetHeight / 2);
+		}
+
+		pos.left -= offsetX || 0;
+		pos.top  -= offsetY || 0;
+
+		pos.left = pos.left > 0 ? 0 : pos.left < this.maxScrollX ? this.maxScrollX : pos.left;
+		pos.top  = pos.top  > 0 ? 0 : pos.top  < this.maxScrollY ? this.maxScrollY : pos.top;
+
+		time = time === undefined || time === null || time === 'auto' ? Math.max(Math.abs(this.x-pos.left), Math.abs(this.y-pos.top)) : time;
+
+		this.scrollTo(pos.left, pos.top, time, easing);
+	},
+
 	_transitionTime: function (time) {
 		time = time || 0;
 		this.scrollerStyle[utils.style.transitionDuration] = time + 'ms';
@@ -464,7 +512,7 @@ IScroll.prototype = {
 		this.y = y;
 
 // INSERT POINT: _translate
-	
+
 	},
 
 	_initEvents: function (remove) {

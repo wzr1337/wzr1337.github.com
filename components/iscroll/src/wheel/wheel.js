@@ -10,6 +10,10 @@
 	},
 
 	_wheel: function (e) {
+		if ( !this.enabled ) {
+			return;
+		}
+
 		var wheelDeltaX, wheelDeltaY,
 			newX, newY,
 			that = this;
@@ -23,21 +27,43 @@
 		e.preventDefault();
 
 		if ( 'wheelDeltaX' in e ) {
-			wheelDeltaX = e.wheelDeltaX / Math.abs(e.wheelDeltaX) || 0;
-			wheelDeltaY = e.wheelDeltaY / Math.abs(e.wheelDeltaY) || 0;
+			wheelDeltaX = e.wheelDeltaX / 120;
+			wheelDeltaY = e.wheelDeltaY / 120;
 		} else if ( 'wheelDelta' in e ) {
-			wheelDeltaX = wheelDeltaY = e.wheelDelta / Math.abs(e.wheelDelta);
+			wheelDeltaX = wheelDeltaY = e.wheelDelta / 120;
 		} else if ( 'detail' in e ) {
-			wheelDeltaX = wheelDeltaY = -(e.detail / Math.abs(e.detail));
+			wheelDeltaX = wheelDeltaY = -e.detail / 3;
 		} else {
 			return;
 		}
 
-		wheelDeltaX *= 12;
-		wheelDeltaY *= 12;
+		wheelDeltaX *= this.options.mouseWheelSpeed;
+		wheelDeltaY *= this.options.mouseWheelSpeed;
 
 		if ( !this.hasVerticalScroll ) {
 			wheelDeltaX = wheelDeltaY;
+			wheelDeltaY = 0;
+		}
+
+		if ( this.options.snap ) {
+			newX = this.currentPage.pageX;
+			newY = this.currentPage.pageY;
+
+			if ( wheelDeltaX > 0 ) {
+				newX--;
+			} else if ( wheelDeltaX < 0 ) {
+				newX++;
+			}
+
+			if ( wheelDeltaY > 0 ) {
+				newY--;
+			} else if ( wheelDeltaY < 0 ) {
+				newY++;
+			}
+
+			this.goToPage(newX, newY);
+
+			return;
 		}
 
 		newX = this.x + (this.hasHorizontalScroll ? wheelDeltaX * this.options.invertWheelDirection : 0);

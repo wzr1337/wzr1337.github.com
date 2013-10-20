@@ -1,6 +1,21 @@
 # Change-Log
 
-## 2013-06-0 9v0.4.4
+## 2013-10-18
+migrated to iscroll 5 for better performance on Android
+
+## 2013-09-19 v0.4.9
+initialization of snappping scroll fixed
+
+## 2013-09-16 v0.4.8
+smaller fix for orientation change
+
+## 2013-09-16 v0.4.7
+
+
+## 2013-08-27 v0.4.6
+Fixed horizontal scroll (css)
+
+## 2013-06-09v0.4.4
 Add isMaxX/isMinX/isMaxY/isMinY as an interface to the final TOP and bottoms positions.
 
 ## 2013-06-08 v0.4.3
