@@ -1,12 +1,12 @@
 {
   "name": "iscroll",
   "homepage": "https://github.com/cubiq/iscroll",
-  "version": "5.0.6",
-  "_release": "5.0.6",
+  "version": "5.0.9",
+  "_release": "5.0.9",
   "_resolution": {
     "type": "version",
-    "tag": "v5.0.6",
-    "commit": "ee957f1cf0b667c6f4c328e119208df1d31e8c75"
+    "tag": "v5.0.9",
+    "commit": "f943a094200bed94e76ebfadb50e0047969d4c42"
   },
   "_source": "git://github.com/cubiq/iscroll.git",
   "_target": "~5.0.5",

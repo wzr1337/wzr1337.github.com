@@ -1,5 +1,29 @@
 # Change-Log
 
+## 2014-9-24
+* Listening to resize of scroller instead of number of elements
+* Default option preventDefualt set to false (allow clicktrhough)
+
+## 2014-07-14
+* Moved to version number 0.5.8
+* Fixed bower.json of distribution package so that the ```main``` path is now a valid path
+    * Fixes issue that grunt-wiredep couldn't inject angular-momentum-scroll
+    * Bower package version contains now build timestamp
+* Modified build process so that the minified file holds now proper license informations of angular-momentum-scroll and the used iScroll library
+* Wrapped scrollable.js into an IIFE to avoid code leaking
+* Source map gets now included into the distribution package
+* Updated NPM and Bower dependencies
+* Updated Karma test suite
+
+## 2014-06-15
+fixed check for scrollX
+
+## 2014-01-17
+fixed horizontal scroll css
+
+## 2013-12-18
+fixed $destroy
+
 ## 2013-11-30
 fixed reinitialization on DOM extension
 fixed accessing undefined scope vars

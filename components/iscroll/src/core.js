@@ -90,12 +90,13 @@ IScroll.prototype = {
 	},
 
 	_transitionEnd: function (e) {
-		if ( e.target != this.scroller ) {
+		if ( e.target != this.scroller || !this.isInTransition ) {
 			return;
 		}
 
-		this._transitionTime(0);
+		this._transitionTime();
 		if ( !this.resetPosition(this.options.bounceTime) ) {
+			this.isInTransition = false;
 			this._execEvent('scrollEnd');
 		}
 	},
@@ -112,8 +113,8 @@ IScroll.prototype = {
 			return;
 		}
 
-		if ( this.options.preventDefault && !utils.isAndroidBrowser && !utils.preventDefaultException(e.target, this.options.preventDefaultException) ) {
-			e.preventDefault();		// This seems to break default Android browser
+		if ( this.options.preventDefault && !utils.isBadAndroid && !utils.preventDefaultException(e.target, this.options.preventDefaultException) ) {
+			e.preventDefault();
 		}
 
 		var point = e.touches ? e.touches[0] : e,
@@ -129,15 +130,16 @@ IScroll.prototype = {
 
 		this._transitionTime();
 
-		this.isAnimating = false;
 		this.startTime = utils.getTime();
 
 		if ( this.options.useTransition && this.isInTransition ) {
+			this.isInTransition = false;
 			pos = this.getComputedPosition();
-
 			this._translate(Math.round(pos.x), Math.round(pos.y));
 			this._execEvent('scrollEnd');
-			this.isInTransition = false;
+		} else if ( !this.options.useTransition && this.isAnimating ) {
+			this.isAnimating = false;
+			this._execEvent('scrollEnd');
 		}
 
 		this.startX    = this.x;
@@ -267,8 +269,6 @@ IScroll.prototype = {
 			time = 0,
 			easing = '';
 
-		this.scrollTo(newX, newY);	// ensures that the last position is rounded
-
 		this.isInTransition = 0;
 		this.initiated = 0;
 		this.endTime = utils.getTime();
@@ -277,6 +277,8 @@ IScroll.prototype = {
 		if ( this.resetPosition(this.options.bounceTime) ) {
 			return;
 		}
+
+		this.scrollTo(newX, newY);	// ensures that the last position is rounded
 
 		// we scrolled less than 10 pixels
 		if ( !this.moved ) {
@@ -288,6 +290,7 @@ IScroll.prototype = {
 				utils.click(e);
 			}
 
+			this._execEvent('scrollCancel');
 			return;
 		}
 
@@ -445,6 +448,8 @@ IScroll.prototype = {
 	scrollTo: function (x, y, time, easing) {
 		easing = easing || utils.ease.circular;
 
+		this.isInTransition = this.options.useTransition && time > 0;
+
 		if ( !time || (this.options.useTransition && easing.style) ) {
 			this._transitionTimingFunction(easing.style);
 			this._transitionTime(time);
@@ -487,7 +492,12 @@ IScroll.prototype = {
 
 	_transitionTime: function (time) {
 		time = time || 0;
+
 		this.scrollerStyle[utils.style.transitionDuration] = time + 'ms';
+
+		if ( !time && utils.isBadAndroid ) {
+			this.scrollerStyle[utils.style.transitionDuration] = '0.001s';
+		}
 
 // INSERT POINT: _transitionTime
 
@@ -570,8 +580,8 @@ IScroll.prototype = {
 			x = +(matrix[12] || matrix[4]);
 			y = +(matrix[13] || matrix[5]);
 		} else {
-			x = +matrix.left.replace(/[^-\d]/g, '');
-			y = +matrix.top.replace(/[^-\d]/g, '');
+			x = +matrix.left.replace(/[^-\d.]/g, '');
+			y = +matrix.top.replace(/[^-\d.]/g, '');
 		}
 
 		return { x: x, y: y };

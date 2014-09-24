@@ -1,5 +1,5 @@
-/*! iScroll v5.0.5 ~ (c) 2008-2013 Matteo Spinelli ~ http://cubiq.org/license */
-var IScroll = (function (window, document, Math) {
+/*! iScroll v5.1.2 ~ (c) 2008-2014 Matteo Spinelli ~ http://cubiq.org/license */
+(function (window, document, Math) {
 var rAF = window.requestAnimationFrame	||
 	window.webkitRequestAnimationFrame	||
 	window.mozRequestAnimationFrame		||
@@ -47,12 +47,19 @@ var utils = (function () {
 		el.removeEventListener(type, fn, !!capture);
 	};
 
-	me.momentum = function (current, start, time, lowerMargin, wrapperSize) {
+	me.prefixPointerEvent = function (pointerEvent) {
+		return window.MSPointerEvent ? 
+			'MSPointer' + pointerEvent.charAt(9).toUpperCase() + pointerEvent.substr(10):
+			pointerEvent;
+	};
+
+	me.momentum = function (current, start, time, lowerMargin, wrapperSize, deceleration) {
 		var distance = current - start,
 			speed = Math.abs(distance) / time,
 			destination,
-			duration,
-			deceleration = 0.0006;
+			duration;
+
+		deceleration = deceleration === undefined ? 0.0006 : deceleration;
 
 		destination = current + ( speed * speed ) / ( 2 * deceleration ) * ( distance < 0 ? -1 : 1 );
 		duration = speed / deceleration;
@@ -79,16 +86,18 @@ var utils = (function () {
 		hasTransform: _transform !== false,
 		hasPerspective: _prefixStyle('perspective') in _elementStyle,
 		hasTouch: 'ontouchstart' in window,
-		hasPointer: navigator.msPointerEnabled,
+		hasPointer: window.PointerEvent || window.MSPointerEvent, // IE10 is prefixed
 		hasTransition: _prefixStyle('transition') in _elementStyle
 	});
 
-	me.isAndroidBrowser = /Android/.test(window.navigator.appVersion) && /Version\/\d/.test(window.navigator.appVersion);
+	// This should find all Android browsers lower than build 535.19 (both stock browser and webview)
+	me.isBadAndroid = /Android /.test(window.navigator.appVersion) && !(/Chrome\/\d/.test(window.navigator.appVersion));
 
 	me.extend(me.style = {}, {
 		transform: _transform,
 		transitionTimingFunction: _prefixStyle('transitionTimingFunction'),
 		transitionDuration: _prefixStyle('transitionDuration'),
+		transitionDelay: _prefixStyle('transitionDelay'),
 		transformOrigin: _prefixStyle('transformOrigin')
 	});
 
@@ -151,6 +160,10 @@ var utils = (function () {
 		mousedown: 2,
 		mousemove: 2,
 		mouseup: 2,
+
+		pointerdown: 3,
+		pointermove: 3,
+		pointerup: 3,
 
 		MSPointerDown: 3,
 		MSPointerMove: 3,
@@ -217,7 +230,7 @@ var utils = (function () {
 		var target = e.target,
 			ev;
 
-		if (target.tagName != 'SELECT' && target.tagName != 'INPUT' && target.tagName != 'TEXTAREA') {
+		if ( !(/(SELECT|INPUT|TEXTAREA)/i).test(target.tagName) ) {
 			ev = document.createEvent('MouseEvents');
 			ev.initMouseEvent('click', true, true, e.view, 1,
 				target.screenX, target.screenY, target.clientX, target.clientY,
@@ -239,7 +252,7 @@ function IScroll (el, options) {
 
 	this.options = {
 
-		resizeIndicator: true,
+		resizeScrollbars: true,
 
 		mouseWheelSpeed: 20,
 
@@ -294,6 +307,10 @@ function IScroll (el, options) {
 		this.options.tap = 'tap';
 	}
 
+	if ( this.options.shrinkScrollbars == 'scale' ) {
+		this.options.useTransition = false;
+	}
+
 	this.options.invertWheelDirection = this.options.invertWheelDirection ? -1 : 1;
 
 // INSERT POINT: NORMALIZATION
@@ -315,7 +332,7 @@ function IScroll (el, options) {
 }
 
 IScroll.prototype = {
-	version: '5.0.5',
+	version: '5.1.2',
 
 	_init: function () {
 		this._initEvents();
@@ -347,13 +364,13 @@ IScroll.prototype = {
 	},
 
 	_transitionEnd: function (e) {
-		if ( e.target != this.scroller ) {
+		if ( e.target != this.scroller || !this.isInTransition ) {
 			return;
 		}
 
-		this._transitionTime(0);
-		console.log('this', this);
+		this._transitionTime();
 		if ( !this.resetPosition(this.options.bounceTime) ) {
+			this.isInTransition = false;
 			this._execEvent('scrollEnd');
 		}
 	},
@@ -370,8 +387,8 @@ IScroll.prototype = {
 			return;
 		}
 
-		if ( this.options.preventDefault && !utils.isAndroidBrowser && !utils.preventDefaultException(e.target, this.options.preventDefaultException) ) {
-			e.preventDefault();		// This seems to break default Android browser
+		if ( this.options.preventDefault && !utils.isBadAndroid && !utils.preventDefaultException(e.target, this.options.preventDefaultException) ) {
+			e.preventDefault();
 		}
 
 		var point = e.touches ? e.touches[0] : e,
@@ -387,14 +404,16 @@ IScroll.prototype = {
 
 		this._transitionTime();
 
-		this.isAnimating = false;
 		this.startTime = utils.getTime();
 
 		if ( this.options.useTransition && this.isInTransition ) {
-			pos = this.getComputedPosition();
-
-			this._translate(Math.round(pos.x), Math.round(pos.y));
 			this.isInTransition = false;
+			pos = this.getComputedPosition();
+			this._translate(Math.round(pos.x), Math.round(pos.y));
+			this._execEvent('scrollEnd');
+		} else if ( !this.options.useTransition && this.isAnimating ) {
+			this.isAnimating = false;
+			this._execEvent('scrollEnd');
 		}
 
 		this.startX    = this.x;
@@ -404,7 +423,7 @@ IScroll.prototype = {
 		this.pointX    = point.pageX;
 		this.pointY    = point.pageY;
 
-		this._execEvent('scrollStart');
+		this._execEvent('beforeScrollStart');
 	},
 
 	_move: function (e) {
@@ -417,8 +436,8 @@ IScroll.prototype = {
 		}
 
 		var point		= e.touches ? e.touches[0] : e,
-			deltaX		= this.hasHorizontalScroll ? point.pageX - this.pointX : 0,
-			deltaY		= this.hasVerticalScroll   ? point.pageY - this.pointY : 0,
+			deltaX		= point.pageX - this.pointX,
+			deltaY		= point.pageY - this.pointY,
 			timestamp	= utils.getTime(),
 			newX, newY,
 			absDistX, absDistY;
@@ -467,6 +486,9 @@ IScroll.prototype = {
 			deltaX = 0;
 		}
 
+		deltaX = this.hasHorizontalScroll ? deltaX : 0;
+		deltaY = this.hasVerticalScroll ? deltaY : 0;
+
 		newX = this.x + deltaX;
 		newY = this.y + deltaY;
 
@@ -480,6 +502,10 @@ IScroll.prototype = {
 
 		this.directionX = deltaX > 0 ? -1 : deltaX < 0 ? 1 : 0;
 		this.directionY = deltaY > 0 ? -1 : deltaY < 0 ? 1 : 0;
+
+		if ( !this.moved ) {
+			this._execEvent('scrollStart');
+		}
 
 		this.moved = true;
 
@@ -517,8 +543,6 @@ IScroll.prototype = {
 			time = 0,
 			easing = '';
 
-		this.scrollTo(newX, newY);	// ensures that the last position is rounded
-
 		this.isInTransition = 0;
 		this.initiated = 0;
 		this.endTime = utils.getTime();
@@ -527,6 +551,8 @@ IScroll.prototype = {
 		if ( this.resetPosition(this.options.bounceTime) ) {
 			return;
 		}
+
+		this.scrollTo(newX, newY);	// ensures that the last position is rounded
 
 		// we scrolled less than 10 pixels
 		if ( !this.moved ) {
@@ -538,6 +564,7 @@ IScroll.prototype = {
 				utils.click(e);
 			}
 
+			this._execEvent('scrollCancel');
 			return;
 		}
 
@@ -548,8 +575,8 @@ IScroll.prototype = {
 
 		// start momentum animation if needed
 		if ( this.options.momentum && duration < 300 ) {
-			momentumX = this.hasHorizontalScroll ? utils.momentum(this.x, this.startX, duration, this.maxScrollX, this.options.bounce ? this.wrapperWidth : 0) : { destination: newX, duration: 0 };
-			momentumY = this.hasVerticalScroll ? utils.momentum(this.y, this.startY, duration, this.maxScrollY, this.options.bounce ? this.wrapperHeight : 0) : { destination: newY, duration: 0 };
+			momentumX = this.hasHorizontalScroll ? utils.momentum(this.x, this.startX, duration, this.maxScrollX, this.options.bounce ? this.wrapperWidth : 0, this.options.deceleration) : { destination: newX, duration: 0 };
+			momentumY = this.hasVerticalScroll ? utils.momentum(this.y, this.startY, duration, this.maxScrollY, this.options.bounce ? this.wrapperHeight : 0, this.options.deceleration) : { destination: newY, duration: 0 };
 			newX = momentumX.destination;
 			newY = momentumY.destination;
 			time = Math.max(momentumX.duration, momentumY.duration);
@@ -644,10 +671,10 @@ IScroll.prototype = {
 		this.scrollerWidth	= this.scroller.offsetWidth;
 		this.scrollerHeight	= this.scroller.offsetHeight;
 
-/* REPLACE END: refresh */
-
 		this.maxScrollX		= this.wrapperWidth - this.scrollerWidth;
 		this.maxScrollY		= this.wrapperHeight - this.scrollerHeight;
+
+/* REPLACE END: refresh */
 
 		this.hasHorizontalScroll	= this.options.scrollX && this.maxScrollX < 0;
 		this.hasVerticalScroll		= this.options.scrollY && this.maxScrollY < 0;
@@ -684,6 +711,18 @@ IScroll.prototype = {
 		this._events[type].push(fn);
 	},
 
+	off: function (type, fn) {
+		if ( !this._events[type] ) {
+			return;
+		}
+
+		var index = this._events[type].indexOf(fn);
+
+		if ( index > -1 ) {
+			this._events[type].splice(index, 1);
+		}
+	},
+
 	_execEvent: function (type) {
 		if ( !this._events[type] ) {
 			return;
@@ -697,7 +736,7 @@ IScroll.prototype = {
 		}
 
 		for ( ; i < l; i++ ) {
-			this._events[type][i].call(this);
+			this._events[type][i].apply(this, [].slice.call(arguments, 1));
 		}
 	},
 
@@ -711,6 +750,8 @@ IScroll.prototype = {
 
 	scrollTo: function (x, y, time, easing) {
 		easing = easing || utils.ease.circular;
+
+		this.isInTransition = this.options.useTransition && time > 0;
 
 		if ( !time || (this.options.useTransition && easing.style) ) {
 			this._transitionTimingFunction(easing.style);
@@ -754,16 +795,20 @@ IScroll.prototype = {
 
 	_transitionTime: function (time) {
 		time = time || 0;
+
 		this.scrollerStyle[utils.style.transitionDuration] = time + 'ms';
 
-
-		if ( this.indicator1 ) {
-			this.indicator1.transitionTime(time);
+		if ( !time && utils.isBadAndroid ) {
+			this.scrollerStyle[utils.style.transitionDuration] = '0.001s';
 		}
 
-		if ( this.indicator2 ) {
-			this.indicator2.transitionTime(time);
+
+		if ( this.indicators ) {
+			for ( var i = this.indicators.length; i--; ) {
+				this.indicators[i].transitionTime(time);
+			}
 		}
+
 
 // INSERT POINT: _transitionTime
 
@@ -773,12 +818,10 @@ IScroll.prototype = {
 		this.scrollerStyle[utils.style.transitionTimingFunction] = easing;
 
 
-		if ( this.indicator1 ) {
-			this.indicator1.transitionTimingFunction(easing);
-		}
-
-		if ( this.indicator2 ) {
-			this.indicator2.transitionTimingFunction(easing);
+		if ( this.indicators ) {
+			for ( var i = this.indicators.length; i--; ) {
+				this.indicators[i].transitionTimingFunction(easing);
+			}
 		}
 
 
@@ -806,13 +849,12 @@ IScroll.prototype = {
 		this.y = y;
 
 
-	if ( this.indicator1 ) {	// usually the vertical
-		this.indicator1.updatePosition();
+	if ( this.indicators ) {
+		for ( var i = this.indicators.length; i--; ) {
+			this.indicators[i].updatePosition();
+		}
 	}
 
-	if ( this.indicator2 ) {
-		this.indicator2.updatePosition();
-	}
 
 // INSERT POINT: _translate
 
@@ -825,19 +867,25 @@ IScroll.prototype = {
 		eventType(window, 'orientationchange', this);
 		eventType(window, 'resize', this);
 
-		eventType(this.wrapper, 'mousedown', this);
-		eventType(target, 'mousemove', this);
-		eventType(target, 'mousecancel', this);
-		eventType(target, 'mouseup', this);
-
-		if ( utils.hasPointer ) {
-			eventType(this.wrapper, 'MSPointerDown', this);
-			eventType(target, 'MSPointerMove', this);
-			eventType(target, 'MSPointerCancel', this);
-			eventType(target, 'MSPointerUp', this);
+		if ( this.options.click ) {
+			eventType(this.wrapper, 'click', this, true);
 		}
 
-		if ( utils.hasTouch ) {
+		if ( !this.options.disableMouse ) {
+			eventType(this.wrapper, 'mousedown', this);
+			eventType(target, 'mousemove', this);
+			eventType(target, 'mousecancel', this);
+			eventType(target, 'mouseup', this);
+		}
+
+		if ( utils.hasPointer && !this.options.disablePointer ) {
+			eventType(this.wrapper, utils.prefixPointerEvent('pointerdown'), this);
+			eventType(target, utils.prefixPointerEvent('pointermove'), this);
+			eventType(target, utils.prefixPointerEvent('pointercancel'), this);
+			eventType(target, utils.prefixPointerEvent('pointerup'), this);
+		}
+
+		if ( utils.hasTouch && !this.options.disableTouch ) {
 			eventType(this.wrapper, 'touchstart', this);
 			eventType(target, 'touchmove', this);
 			eventType(target, 'touchcancel', this);
@@ -859,8 +907,8 @@ IScroll.prototype = {
 			x = +(matrix[12] || matrix[4]);
 			y = +(matrix[13] || matrix[5]);
 		} else {
-			x = +matrix.left.replace(/[^-\d]/g, '');
-			y = +matrix.top.replace(/[^-\d]/g, '');
+			x = +matrix.left.replace(/[^-\d.]/g, '');
+			y = +matrix.top.replace(/[^-\d.]/g, '');
 		}
 
 		return { x: x, y: y };
@@ -868,80 +916,115 @@ IScroll.prototype = {
 
 	_initIndicators: function () {
 		var interactive = this.options.interactiveScrollbars,
-			defaultScrollbars = typeof this.options.scrollbars != 'object',
 			customStyle = typeof this.options.scrollbars != 'string',
-			indicator1,
-			indicator2;
+			indicators = [],
+			indicator;
+
+		var that = this;
+
+		this.indicators = [];
 
 		if ( this.options.scrollbars ) {
 			// Vertical scrollbar
 			if ( this.options.scrollY ) {
-				indicator1 = {
+				indicator = {
 					el: createDefaultScrollbar('v', interactive, this.options.scrollbars),
 					interactive: interactive,
 					defaultScrollbars: true,
 					customStyle: customStyle,
-					resize: this.options.resizeIndicator,
+					resize: this.options.resizeScrollbars,
+					shrink: this.options.shrinkScrollbars,
+					fade: this.options.fadeScrollbars,
 					listenX: false
 				};
 
-				this.wrapper.appendChild(indicator1.el);
+				this.wrapper.appendChild(indicator.el);
+				indicators.push(indicator);
 			}
 
 			// Horizontal scrollbar
 			if ( this.options.scrollX ) {
-				indicator2 = {
+				indicator = {
 					el: createDefaultScrollbar('h', interactive, this.options.scrollbars),
 					interactive: interactive,
 					defaultScrollbars: true,
 					customStyle: customStyle,
-					resize: this.options.resizeIndicator,
+					resize: this.options.resizeScrollbars,
+					shrink: this.options.shrinkScrollbars,
+					fade: this.options.fadeScrollbars,
 					listenY: false
 				};
 
-				this.wrapper.appendChild(indicator2.el);
+				this.wrapper.appendChild(indicator.el);
+				indicators.push(indicator);
 			}
-		} else {
-			indicator1 = this.options.indicators.length ? this.options.indicators[0] : this.options.indicators;
-			indicator2 = this.options.indicators[1] && this.options.indicators[1];
 		}
 
-		if ( indicator1 ) {
-			this.indicator1 = new Indicator(this, indicator1);
+		if ( this.options.indicators ) {
+			// TODO: check concat compatibility
+			indicators = indicators.concat(this.options.indicators);
 		}
 
-		if ( indicator2 ) {
-			this.indicator2 = new Indicator(this, indicator2);
+		for ( var i = indicators.length; i--; ) {
+			this.indicators.push( new Indicator(this, indicators[i]) );
 		}
+
+		// TODO: check if we can use array.map (wide compatibility and performance issues)
+		function _indicatorsMap (fn) {
+			for ( var i = that.indicators.length; i--; ) {
+				fn.call(that.indicators[i]);
+			}
+		}
+
+		if ( this.options.fadeScrollbars ) {
+			this.on('scrollEnd', function () {
+				_indicatorsMap(function () {
+					this.fade();
+				});
+			});
+
+			this.on('scrollCancel', function () {
+				_indicatorsMap(function () {
+					this.fade();
+				});
+			});
+
+			this.on('scrollStart', function () {
+				_indicatorsMap(function () {
+					this.fade(1);
+				});
+			});
+
+			this.on('beforeScrollStart', function () {
+				_indicatorsMap(function () {
+					this.fade(1, true);
+				});
+			});
+		}
+
 
 		this.on('refresh', function () {
-			if ( this.indicator1 ) {
-				this.indicator1.refresh();
-			}
-
-			if ( this.indicator2 ) {
-				this.indicator2.refresh();
-			}
+			_indicatorsMap(function () {
+				this.refresh();
+			});
 		});
 
 		this.on('destroy', function () {
-			if ( this.indicator1 ) {
-				this.indicator1.destroy();
-				this.indicator1 = null;
-			}
+			_indicatorsMap(function () {
+				this.destroy();
+			});
 
-			if ( this.indicator2 ) {
-				this.indicator2.destroy();
-				this.indicator2 = null;
-			}
+			delete this.indicators;
 		});
 	},
 
 	_initWheel: function () {
+		utils.addEvent(this.wrapper, 'wheel', this);
 		utils.addEvent(this.wrapper, 'mousewheel', this);
 		utils.addEvent(this.wrapper, 'DOMMouseScroll', this);
 
 		this.on('destroy', function () {
+			utils.removeEvent(this.wrapper, 'wheel', this);
 			utils.removeEvent(this.wrapper, 'mousewheel', this);
 			utils.removeEvent(this.wrapper, 'DOMMouseScroll', this);
 		});
@@ -952,31 +1035,40 @@ IScroll.prototype = {
 			return;
 		}
 
+		e.preventDefault();
+		e.stopPropagation();
+
 		var wheelDeltaX, wheelDeltaY,
 			newX, newY,
 			that = this;
+
+		if ( this.wheelTimeout === undefined ) {
+			that._execEvent('scrollStart');
+		}
 
 		// Execute the scrollEnd event after 400ms the wheel stopped scrolling
 		clearTimeout(this.wheelTimeout);
 		this.wheelTimeout = setTimeout(function () {
 			that._execEvent('scrollEnd');
+			that.wheelTimeout = undefined;
 		}, 400);
 
-		e.preventDefault();
-
-		if ( 'wheelDeltaX' in e ) {
-			wheelDeltaX = e.wheelDeltaX / 120;
-			wheelDeltaY = e.wheelDeltaY / 120;
+		if ( 'deltaX' in e ) {
+			wheelDeltaX = -e.deltaX;
+			wheelDeltaY = -e.deltaY;
+		} else if ( 'wheelDeltaX' in e ) {
+			wheelDeltaX = e.wheelDeltaX / 120 * this.options.mouseWheelSpeed;
+			wheelDeltaY = e.wheelDeltaY / 120 * this.options.mouseWheelSpeed;
 		} else if ( 'wheelDelta' in e ) {
-			wheelDeltaX = wheelDeltaY = e.wheelDelta / 120;
+			wheelDeltaX = wheelDeltaY = e.wheelDelta / 120 * this.options.mouseWheelSpeed;
 		} else if ( 'detail' in e ) {
-			wheelDeltaX = wheelDeltaY = -e.detail / 3;
+			wheelDeltaX = wheelDeltaY = -e.detail / 3 * this.options.mouseWheelSpeed;
 		} else {
 			return;
 		}
 
-		wheelDeltaX *= this.options.mouseWheelSpeed;
-		wheelDeltaY *= this.options.mouseWheelSpeed;
+		wheelDeltaX *= this.options.invertWheelDirection;
+		wheelDeltaY *= this.options.invertWheelDirection;
 
 		if ( !this.hasVerticalScroll ) {
 			wheelDeltaX = wheelDeltaY;
@@ -1004,8 +1096,8 @@ IScroll.prototype = {
 			return;
 		}
 
-		newX = this.x + (this.hasHorizontalScroll ? wheelDeltaX * this.options.invertWheelDirection : 0);
-		newY = this.y + (this.hasVerticalScroll ? wheelDeltaY * this.options.invertWheelDirection : 0);
+		newX = this.x + Math.round(this.hasHorizontalScroll ? wheelDeltaX : 0);
+		newY = this.y + Math.round(this.hasVerticalScroll ? wheelDeltaY : 0);
 
 		if ( newX > 0 ) {
 			newX = 0;
@@ -1364,6 +1456,8 @@ IScroll.prototype = {
 			case this.options.keyBindings.down:
 				newY -= snap ? 1 : 5 + this.keyAcceleration>>0;
 				break;
+			default:
+				return;
 		}
 
 		if ( snap ) {
@@ -1432,19 +1526,23 @@ IScroll.prototype = {
 	handleEvent: function (e) {
 		switch ( e.type ) {
 			case 'touchstart':
+			case 'pointerdown':
 			case 'MSPointerDown':
 			case 'mousedown':
 				this._start(e);
 				break;
 			case 'touchmove':
+			case 'pointermove':
 			case 'MSPointerMove':
 			case 'mousemove':
 				this._move(e);
 				break;
 			case 'touchend':
+			case 'pointerup':
 			case 'MSPointerUp':
 			case 'mouseup':
 			case 'touchcancel':
+			case 'pointercancel':
 			case 'MSPointerCancel':
 			case 'mousecancel':
 				this._end(e);
@@ -1459,12 +1557,19 @@ IScroll.prototype = {
 			case 'MSTransitionEnd':
 				this._transitionEnd(e);
 				break;
+			case 'wheel':
 			case 'DOMMouseScroll':
 			case 'mousewheel':
 				this._wheel(e);
 				break;
 			case 'keydown':
 				this._key(e);
+				break;
+			case 'click':
+				if ( !e._constructed ) {
+					e.preventDefault();
+					e.stopPropagation();
+				}
 				break;
 		}
 	}
@@ -1494,6 +1599,8 @@ function createDefaultScrollbar (direction, interactive, type) {
 		scrollbar.className = 'iScrollVerticalScrollbar';
 	}
 
+	scrollbar.style.cssText += ';overflow:hidden';
+
 	if ( !interactive ) {
 		scrollbar.style.pointerEvents = 'none';
 	}
@@ -1505,6 +1612,7 @@ function createDefaultScrollbar (direction, interactive, type) {
 
 function Indicator (scroller, options) {
 	this.wrapper = typeof options.el == 'string' ? document.querySelector(options.el) : options.el;
+	this.wrapperStyle = this.wrapper.style;
 	this.indicator = this.wrapper.children[0];
 	this.indicatorStyle = this.indicator.style;
 	this.scroller = scroller;
@@ -1515,6 +1623,8 @@ function Indicator (scroller, options) {
 		interactive: false,
 		resize: true,
 		defaultScrollbars: false,
+		shrink: false,
+		fade: false,
 		speedRatioX: 0,
 		speedRatioY: 0
 	};
@@ -1529,13 +1639,24 @@ function Indicator (scroller, options) {
 	this.maxPosY = 0;
 
 	if ( this.options.interactive ) {
-		utils.addEvent(this.indicator, 'touchstart', this);
-		utils.addEvent(this.indicator, 'MSPointerDown', this);
-		utils.addEvent(this.indicator, 'mousedown', this);
+		if ( !this.options.disableTouch ) {
+			utils.addEvent(this.indicator, 'touchstart', this);
+			utils.addEvent(window, 'touchend', this);
+		}
+		if ( !this.options.disablePointer ) {
+			utils.addEvent(this.indicator, utils.prefixPointerEvent('pointerdown'), this);
+			utils.addEvent(window, utils.prefixPointerEvent('pointerup'), this);
+		}
+		if ( !this.options.disableMouse ) {
+			utils.addEvent(this.indicator, 'mousedown', this);
+			utils.addEvent(window, 'mouseup', this);
+		}
+	}
 
-		utils.addEvent(window, 'touchend', this);
-		utils.addEvent(window, 'MSPointerUp', this);
-		utils.addEvent(window, 'mouseup', this);
+	if ( this.options.fade ) {
+		this.wrapperStyle[utils.style.transform] = this.scroller.translateZ;
+		this.wrapperStyle[utils.style.transitionDuration] = utils.isBadAndroid ? '0.001s' : '0ms';
+		this.wrapperStyle.opacity = '0';
 	}
 }
 
@@ -1543,19 +1664,23 @@ Indicator.prototype = {
 	handleEvent: function (e) {
 		switch ( e.type ) {
 			case 'touchstart':
+			case 'pointerdown':
 			case 'MSPointerDown':
 			case 'mousedown':
 				this._start(e);
 				break;
 			case 'touchmove':
+			case 'pointermove':
 			case 'MSPointerMove':
 			case 'mousemove':
 				this._move(e);
 				break;
 			case 'touchend':
+			case 'pointerup':
 			case 'MSPointerUp':
 			case 'mouseup':
 			case 'touchcancel':
+			case 'pointercancel':
 			case 'MSPointerCancel':
 			case 'mousecancel':
 				this._end(e);
@@ -1566,15 +1691,15 @@ Indicator.prototype = {
 	destroy: function () {
 		if ( this.options.interactive ) {
 			utils.removeEvent(this.indicator, 'touchstart', this);
-			utils.removeEvent(this.indicator, 'MSPointerDown', this);
+			utils.removeEvent(this.indicator, utils.prefixPointerEvent('pointerdown'), this);
 			utils.removeEvent(this.indicator, 'mousedown', this);
 
 			utils.removeEvent(window, 'touchmove', this);
-			utils.removeEvent(window, 'MSPointerMove', this);
+			utils.removeEvent(window, utils.prefixPointerEvent('pointermove'), this);
 			utils.removeEvent(window, 'mousemove', this);
 
 			utils.removeEvent(window, 'touchend', this);
-			utils.removeEvent(window, 'MSPointerUp', this);
+			utils.removeEvent(window, utils.prefixPointerEvent('pointerup'), this);
 			utils.removeEvent(window, 'mouseup', this);
 		}
 
@@ -1589,7 +1714,7 @@ Indicator.prototype = {
 		e.preventDefault();
 		e.stopPropagation();
 
-		this.transitionTime(0);
+		this.transitionTime();
 
 		this.initiated = true;
 		this.moved = false;
@@ -1598,11 +1723,17 @@ Indicator.prototype = {
 
 		this.startTime	= utils.getTime();
 
-		utils.addEvent(window, 'touchmove', this);
-		utils.addEvent(window, 'MSPointerMove', this);
-		utils.addEvent(window, 'mousemove', this);
+		if ( !this.options.disableTouch ) {
+			utils.addEvent(window, 'touchmove', this);
+		}
+		if ( !this.options.disablePointer ) {
+			utils.addEvent(window, utils.prefixPointerEvent('pointermove'), this);
+		}
+		if ( !this.options.disableMouse ) {
+			utils.addEvent(window, 'mousemove', this);
+		}
 
-		this.scroller._execEvent('scrollStart');
+		this.scroller._execEvent('beforeScrollStart');
 	},
 
 	_move: function (e) {
@@ -1610,6 +1741,10 @@ Indicator.prototype = {
 			deltaX, deltaY,
 			newX, newY,
 			timestamp = utils.getTime();
+
+		if ( !this.moved ) {
+			this.scroller._execEvent('scrollStart');
+		}
 
 		this.moved = true;
 
@@ -1623,6 +1758,8 @@ Indicator.prototype = {
 		newY = this.y + deltaY;
 
 		this._pos(newX, newY);
+
+// INSERT POINT: indicator._move
 
 		e.preventDefault();
 		e.stopPropagation();
@@ -1639,7 +1776,7 @@ Indicator.prototype = {
 		e.stopPropagation();
 
 		utils.removeEvent(window, 'touchmove', this);
-		utils.removeEvent(window, 'MSPointerMove', this);
+		utils.removeEvent(window, utils.prefixPointerEvent('pointermove'), this);
 		utils.removeEvent(window, 'mousemove', this);
 
 		if ( this.scroller.options.snap ) {
@@ -1667,6 +1804,10 @@ Indicator.prototype = {
 	transitionTime: function (time) {
 		time = time || 0;
 		this.indicatorStyle[utils.style.transitionDuration] = time + 'ms';
+
+		if ( !time && utils.isBadAndroid ) {
+			this.indicatorStyle[utils.style.transitionDuration] = '0.001s';
+		}
 	},
 
 	transitionTimingFunction: function (easing) {
@@ -1674,7 +1815,7 @@ Indicator.prototype = {
 	},
 
 	refresh: function () {
-		this.transitionTime(0);
+		this.transitionTime();
 
 		if ( this.options.listenX && !this.options.listenY ) {
 			this.indicatorStyle.display = this.scroller.hasHorizontalScroll ? 'block' : 'none';
@@ -1718,7 +1859,17 @@ Indicator.prototype = {
 			} else {
 				this.indicatorWidth = this.indicator.clientWidth;
 			}
+
 			this.maxPosX = this.wrapperWidth - this.indicatorWidth;
+
+			if ( this.options.shrink == 'clip' ) {
+				this.minBoundaryX = -this.indicatorWidth + 8;
+				this.maxBoundaryX = this.wrapperWidth - 8;
+			} else {
+				this.minBoundaryX = 0;
+				this.maxBoundaryX = this.maxPosX;
+			}
+
 			this.sizeRatioX = this.options.speedRatioX || (this.scroller.maxScrollX && (this.maxPosX / this.scroller.maxScrollX));	
 		}
 
@@ -1732,6 +1883,16 @@ Indicator.prototype = {
 			}
 
 			this.maxPosY = this.wrapperHeight - this.indicatorHeight;
+
+			if ( this.options.shrink == 'clip' ) {
+				this.minBoundaryY = -this.indicatorHeight + 8;
+				this.maxBoundaryY = this.wrapperHeight - 8;
+			} else {
+				this.minBoundaryY = 0;
+				this.maxBoundaryY = this.maxPosY;
+			}
+
+			this.maxPosY = this.wrapperHeight - this.indicatorHeight;
 			this.sizeRatioY = this.options.speedRatioY || (this.scroller.maxScrollY && (this.maxPosY / this.scroller.maxScrollY));
 		}
 
@@ -1739,21 +1900,47 @@ Indicator.prototype = {
 	},
 
 	updatePosition: function () {
-		var x = Math.round(this.sizeRatioX * this.scroller.x) || 0,
-			y = Math.round(this.sizeRatioY * this.scroller.y) || 0;
+		var x = this.options.listenX && Math.round(this.sizeRatioX * this.scroller.x) || 0,
+			y = this.options.listenY && Math.round(this.sizeRatioY * this.scroller.y) || 0;
 
 		if ( !this.options.ignoreBoundaries ) {
-			if ( x < 0 ) {
-				x = 0;
-			} else if ( x > this.maxPosX ) {
-				x = this.maxPosX;
+			if ( x < this.minBoundaryX ) {
+				if ( this.options.shrink == 'scale' ) {
+					this.width = Math.max(this.indicatorWidth + x, 8);
+					this.indicatorStyle.width = this.width + 'px';
+				}
+				x = this.minBoundaryX;
+			} else if ( x > this.maxBoundaryX ) {
+				if ( this.options.shrink == 'scale' ) {
+					this.width = Math.max(this.indicatorWidth - (x - this.maxPosX), 8);
+					this.indicatorStyle.width = this.width + 'px';
+					x = this.maxPosX + this.indicatorWidth - this.width;
+				} else {
+					x = this.maxBoundaryX;
+				}
+			} else if ( this.options.shrink == 'scale' && this.width != this.indicatorWidth ) {
+				this.width = this.indicatorWidth;
+				this.indicatorStyle.width = this.width + 'px';
 			}
 
-			if ( y < 0 ) {
-				y = 0;
-			} else if ( y > this.maxPosY ) {
-				y = this.maxPosY;
-			}		
+			if ( y < this.minBoundaryY ) {
+				if ( this.options.shrink == 'scale' ) {
+					this.height = Math.max(this.indicatorHeight + y * 3, 8);
+					this.indicatorStyle.height = this.height + 'px';
+				}
+				y = this.minBoundaryY;
+			} else if ( y > this.maxBoundaryY ) {
+				if ( this.options.shrink == 'scale' ) {
+					this.height = Math.max(this.indicatorHeight - (y - this.maxPosY) * 3, 8);
+					this.indicatorStyle.height = this.height + 'px';
+					y = this.maxPosY + this.indicatorHeight - this.height;
+				} else {
+					y = this.maxBoundaryY;
+				}
+			} else if ( this.options.shrink == 'scale' && this.height != this.indicatorHeight ) {
+				this.height = this.indicatorHeight;
+				this.indicatorStyle.height = this.height + 'px';
+			}
 		}
 
 		this.x = x;
@@ -1784,14 +1971,47 @@ Indicator.prototype = {
 		y = this.options.listenY ? Math.round(y / this.sizeRatioY) : this.scroller.y;
 
 		this.scroller.scrollTo(x, y);
+	},
+
+	fade: function (val, hold) {
+		if ( hold && !this.visible ) {
+			return;
+		}
+
+		clearTimeout(this.fadeTimeout);
+		this.fadeTimeout = null;
+
+		var time = val ? 250 : 500,
+			delay = val ? 0 : 300;
+
+		val = val ? '1' : '0';
+
+		this.wrapperStyle[utils.style.transitionDuration] = time + 'ms';
+
+		this.fadeTimeout = setTimeout((function (val) {
+			this.wrapperStyle.opacity = val;
+			this.visible = +val;
+		}).bind(this, val), delay);
 	}
 };
 
-IScroll.ease = utils.ease;
+IScroll.utils = utils;
 
-return IScroll;
+if ( typeof module != 'undefined' && module.exports ) {
+	module.exports = IScroll;
+} else {
+	window.IScroll = IScroll;
+}
 
 })(window, document, Math);
+/**
+ * @license angular-momentum-scroll
+ * (c) 2012-2014 Patrick Bartsch
+ * Momentum scroll for AngularJS based on iScroll
+ * License: MIT
+ */
+(function(angular) {
+
 'use strict';
 
 angular.module('angular-momentum-scroll', []);
@@ -1823,8 +2043,8 @@ angular.module('angular-momentum-scroll', []);
  *      parameters="{{ { hScroll: true, hScrollbar: false, snap: true,
  *      momentum: false} }}"">...</div>
  */
-angular.module('angular-momentum-scroll').directive('scrollable', ['$timeout',
-  '$window', '$document', function($timeout, $window, $document) {
+angular.module('angular-momentum-scroll').directive('scrollable',
+  ['$timeout', '$window', '$document', function($timeout, $window, $document) {
 
     return {
       restrict : 'AE',
@@ -1873,13 +2093,9 @@ angular.module('angular-momentum-scroll').directive('scrollable', ['$timeout',
         var head = angular.element($document[0].head);
         head.append('<style type="text/css">' + style + '</style>');
         // apply some necessary styling 
-        element.css('overflow', 'auto');
+        element.css('overflow', 'hidden');
         element.css('position', 'relative');
         var scroller = angular.element(element.children('.scroller')[0]);
-        // fix for automatic horizontal scroll
-        if (angular.isDefined(scope.scrollX)){
-          scroller.addClass('inline-flex');
-        }
 
       //define handlers
         var handleScrollEnd = function() {
@@ -1990,9 +2206,11 @@ angular.module('angular-momentum-scroll').directive('scrollable', ['$timeout',
           /* make sure to free memory if scrollable element is
           * destroyed (avoid memleaking)*/
           element.bind('$destroy', function() {
+            if (angular.isDefined(iScrollInstance)) {
               iScrollInstance.destroy();
               iScrollInstance = undefined;
-            });
+            }
+          });
         };
 
         attrs.$observe('parameters', function(val) {
@@ -2005,25 +2223,42 @@ angular.module('angular-momentum-scroll').directive('scrollable', ['$timeout',
           }
           scope.scrollX = ('scrollX' in scope.iscrollParameters &&
             scope.iscrollParameters.scrollX);
-
-          // refresh on content change
-          scope.$watchCollection(function () { return scroller.children(); },
-            function(nVal) {
-              if (angular.isDefined(nVal)) {
-                if (angular.isDefined(iScrollInstance)) {
-                  iScrollInstance.destroy();
-                }
-                $timeout(function(){
-                  _init();
-                  if (angular.isDefined(iScrollInstance.pages) &&
-                    iScrollInstance.pages.length > 0) {
-                    scrollToPageX(nVal.currPageX);
-                    scrollToPageY(nVal.currPageY);
-                  }
-                });
-              }
-            });
+          // fix for automatic horizontal scroll
+          if (scope.scrollX){
+            scroller.addClass('inline-flex');
+          }
+          // do not prevent Clicks into nested elements by default
+          scope.iscrollParameters.preventDefault = val.preventDefault || false;
         });
+
+        var _refresh = function(nVal) {
+            if (angular.isDefined(nVal)) {
+              if (angular.isDefined(iScrollInstance)) {
+                iScrollInstance.destroy();
+              }
+              $timeout(function(){
+                _init();
+                if (angular.isDefined(iScrollInstance.pages) &&
+                  iScrollInstance.pages.length > 0) {
+                  scrollToPageX(nVal.currPageX);
+                  scrollToPageY(nVal.currPageY);
+                }
+              });
+            }
+          };
+
+        // refresh on content change
+        scope.$watch(function () { return scroller[0].offsetHeight; },
+          _refresh
+          );
+        scope.$watch(function () { return scroller[0].offsetWidth; },
+          _refresh
+          );
+
+        // initial refresh
+        _refresh();
       }
     };
   }]);
+
+})(angular);
